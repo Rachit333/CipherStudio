@@ -23,6 +23,7 @@ interface FileState {
 
 export const useProjectStore = create<FileState>((set) => {
   const tag = "useProjectStore";
+  console.log(tag, "init", new Date().toISOString());
   const d = (...args: any[]) => {
     try {
       console.debug(tag, new Date().toISOString(), ...args);
@@ -45,20 +46,25 @@ export const useProjectStore = create<FileState>((set) => {
     try {
       localStorage.setItem(key, value);
       d("localStorage.setItem OK", key, value?.slice?.(0, 120));
+      console.log(tag, "safeSetLocal set", key, value?.slice?.(0, 120));
     } catch (err) {
       e("localStorage.setItem ERROR", key, String(err));
+      console.log(tag, "safeSetLocal error", key, String(err));
     }
   };
 
   const pushToServer = async (payload: any) => {
     try {
       d("attempting to get ID token for push");
+      console.log(tag, "pushToServer start", payload?.projectId);
       const token = await getIdToken();
       if (!token) {
         i("no ID token available; skipping authenticated push", payload.projectId);
+        console.log(tag, "pushToServer skipped no token", payload?.projectId);
         return;
       }
       d("ID token available (not logged to avoid leaking)");
+      console.log(tag, "pushToServer has token", payload?.projectId);
       const resp = await fetch("/api/upstash/push", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -67,11 +73,14 @@ export const useProjectStore = create<FileState>((set) => {
       const text = await resp.text();
       if (!resp.ok) {
         e("push failed", { status: resp.status, statusText: resp.statusText, body: text, payload });
+        console.log(tag, "pushToServer failed", { status: resp.status, statusText: resp.statusText, body: text });
       } else {
         i("push succeeded", { status: resp.status, body: text, projectId: payload.projectId });
+        console.log(tag, "pushToServer succeeded", payload?.projectId, text?.slice?.(0, 200));
       }
     } catch (err) {
       e("pushToServer ERROR", String(err));
+      console.log(tag, "pushToServer error", String(err));
     }
   };
 
@@ -115,15 +124,18 @@ root.render(<App />);`,
         p = p.replace(/\/+/g, "/");
         if (p === "/" || p.length < 2) {
           e("setFile invalid path", path);
+          console.log(tag, "setFile invalid path", path);
           return s;
         }
 
         const nextFiles = { ...s.files, [p]: content };
+        console.log(tag, "setFile", p, content?.slice?.(0, 120));
         try {
           const key = `cipherstudio:file:${encodeURIComponent(p)}`;
           safeSetLocal(key, content);
         } catch (err) {
           e("setFile localStorage error", p, String(err));
+          console.log(tag, "setFile localStorage error", p, String(err));
         }
         try {
           if (s.autosave) {
@@ -132,10 +144,12 @@ root.render(<App />);`,
             const owner = auth.currentUser?.displayName || auth.currentUser?.email || auth.currentUser?.uid;
             const payload = { files: { ...nextFiles }, projectId, owner };
             d("autosave enabled; queuing push", projectId, owner);
+            console.log(tag, "setFile autosave queue", projectId, owner);
             void pushToServer(payload);
           }
         } catch (err) {
           e("setFile autosave push error", String(err));
+          console.log(tag, "setFile autosave push error", String(err));
         }
         return { files: nextFiles };
       }),
@@ -144,6 +158,7 @@ root.render(<App />);`,
         const copy = { ...s.files };
         delete copy[path];
         d("deleteFile", path);
+        console.log(tag, "deleteFile", path);
         return { files: copy };
       }),
     renameFile: (oldPath: string, newPath: string) =>
@@ -152,6 +167,7 @@ root.render(<App />);`,
         copy[newPath] = copy[oldPath] ?? "";
         delete copy[oldPath];
         d("renameFile", oldPath, newPath);
+        console.log(tag, "renameFile", oldPath, newPath);
         return { files: copy };
       }),
     setAutosave: (v: boolean) =>
@@ -160,11 +176,14 @@ root.render(<App />);`,
           if (v) {
             const payload = { key: s.currentProjectId, value: s.files };
             d("enabling autosave; triggering initial push attempt", payload);
+            console.log(tag, "setAutosave enabling", s.currentProjectId);
             void pushToServer({ files: s.files, projectId: s.currentProjectId, owner: undefined });
           }
         } catch (err) {
           e("setAutosave error", String(err));
+          console.log(tag, "setAutosave error", String(err));
         }
+        console.log(tag, "setAutosave result", v);
         return { autosave: v };
       }),
     setUnsaved: (path: string, content: string) =>
@@ -175,8 +194,10 @@ root.render(<App />);`,
           safeSetLocal(key, content);
         } catch (err) {
           e("setUnsaved localStorage error", path, String(err));
+          console.log(tag, "setUnsaved local error", path, String(err));
         }
         d("setUnsaved", path);
+        console.log(tag, "setUnsaved", path);
         return { unsaved: next };
       }),
     commitUnsaved: (path: string, pushToRedis?: boolean) =>
@@ -185,6 +206,7 @@ root.render(<App />);`,
         const copyUnsaved = { ...(s.unsaved || {}) };
         if (copyUnsaved[path] !== undefined) {
           let toWrite = copyUnsaved[path];
+          console.log(tag, "commitUnsaved start", path, toWrite?.slice?.(0, 120));
           const ext = path.split(".").pop()?.toLowerCase();
           if (ext === "js" || ext === "jsx" || ext === "ts" || ext === "tsx") {
             toWrite = toWrite.replace(/^\s*\/\/\s*(<[^>]+>\s*|<[^>]+\/>\s*)$/gm, (m: string, g1: string) => {
@@ -197,6 +219,7 @@ root.render(<App />);`,
             safeSetLocal(key, toWrite);
           } catch (err) {
             e("commitUnsaved localStorage error", path, String(err));
+            console.log(tag, "commitUnsaved local error", path, String(err));
           }
           delete copyUnsaved[path];
           try {
@@ -207,11 +230,14 @@ root.render(<App />);`,
               const auth = getAuthInstance();
               const owner = auth.currentUser?.displayName || auth.currentUser?.email || auth.currentUser?.uid;
               d("commitUnsaved will push", { projectId, owner, path });
+              console.log(tag, "commitUnsaved will push", projectId, owner, path);
               void pushToServer({ files: fullProject, projectId, owner });
             }
           } catch (err) {
             e("commitUnsaved push error", String(err));
+            console.log(tag, "commitUnsaved push error", String(err));
           }
+          console.log(tag, "commitUnsaved done", path);
           return { files: copyFiles, unsaved: copyUnsaved };
         }
         return s;
@@ -222,6 +248,7 @@ root.render(<App />);`,
         if (copyUnsaved[path] !== undefined) {
           delete copyUnsaved[path];
           d("discardUnsaved", path);
+          console.log(tag, "discardUnsaved", path);
           return { unsaved: copyUnsaved };
         }
         return s;
@@ -235,8 +262,10 @@ root.render(<App />);`,
           safeSetLocal(key, JSON.stringify(payload));
           s.currentProjectId = projectId;
           i("saveProject ok", projectId);
+          console.log(tag, "saveProject", projectId, payload.savedAt);
         } catch (err) {
           e("saveProject error", String(err));
+          console.log(tag, "saveProject error", String(err));
         }
         return s;
       }),
@@ -249,16 +278,20 @@ root.render(<App />);`,
             try {
               const key = `cipherstudio:file:${encodeURIComponent(p)}`;
               safeSetLocal(key, content);
+              console.log(tag, "pushProject persisted file", p);
             } catch (err) {
               e("pushProject local persist error", p, String(err));
+              console.log(tag, "pushProject local persist error", p, String(err));
             }
           });
           const auth = getAuthInstance();
           const ownerToSend = auth.currentUser?.displayName || auth.currentUser?.email || auth.currentUser?.uid || finalOwner;
           d("pushProject preparing payload", { pid, ownerToSend });
+          console.log(tag, "pushProject preparing payload", pid, ownerToSend);
           void pushToServer({ files: s.files, projectId: pid, owner: ownerToSend });
         } catch (err) {
           e("pushProject error", String(err));
+          console.log(tag, "pushProject error", String(err));
         }
         return s;
       }),
@@ -266,14 +299,50 @@ root.render(<App />);`,
       set((s) => {
         try {
           if (!projectId) return s;
+          console.log(tag, "loadProject start", projectId);
           const localKey = `cipherstudio:project:${projectId}`;
           const rawLocal = localStorage.getItem(localKey);
           let localParsed: any = null;
           if (rawLocal) {
             try {
               localParsed = JSON.parse(rawLocal);
-            } catch {}
+              console.log(tag, "loadProject found local snapshot", projectId, Object.keys(localParsed.files || {}).length);
+            } catch (parseErr) {
+              console.log(tag, "loadProject local parse error", projectId, String(parseErr));
+            }
+          } else {
+            try {
+              const reconstructed: Record<string, string> = {};
+              for (let i = 0; i < localStorage.length; i++) {
+                const k = localStorage.key(i) as string;
+                if (!k) continue;
+                if (k.startsWith("cipherstudio:file:")) {
+                  try {
+                    const p = decodeURIComponent(k.replace("cipherstudio:file:", ""));
+                    const v = localStorage.getItem(k);
+                    if (v !== null) reconstructed[p] = v;
+                  } catch (e) {
+                    console.log(tag, "loadProject reconstruct item error", k, String(e));
+                  }
+                }
+              }
+              if (Object.keys(reconstructed).length > 0) {
+                localParsed = { files: reconstructed, autosave: s.autosave, unsaved: {} };
+                try {
+                  safeSetLocal(localKey, JSON.stringify(localParsed));
+                  console.log(tag, "loadProject reconstructed and saved snapshot", projectId, Object.keys(reconstructed).length);
+                } catch (saveErr) {
+                  console.log(tag, "loadProject reconstruct save error", String(saveErr));
+                }
+              } else {
+                console.log(tag, "loadProject found no local files to reconstruct", projectId);
+              }
+            } catch (err) {
+              d("reconstruct project from files failed", String(err));
+              console.log(tag, "loadProject reconstruct failed", String(err));
+            }
           }
+
           (async () => {
             try {
               const resp = await fetch(`/api/upstash/push?key=project:${encodeURIComponent(projectId)}`);
@@ -283,10 +352,12 @@ root.render(<App />);`,
                 if (remote && remote.files) {
                   const remoteSaved = remote.savedAt || remote.payload?.savedAt || remote.savedAt;
                   const localSaved = localParsed?.savedAt;
+                  console.log(tag, "loadProject remote fetched", projectId, Object.keys(remote.files || {}).length, "remoteSaved", remoteSaved, "localSaved", localSaved);
                   if (!localSaved && remoteSaved) {
                     safeSetLocal(localKey, JSON.stringify(remote));
-                    set({ files: remote.files, autosave: s.autosave, unsaved: {} });
+                    set({ files: remote.files, autosave: s.autosave, unsaved: {}, currentProjectId: projectId });
                     i("loadProject: remote newer, loaded remote", projectId, remoteSaved);
+                    console.log(tag, "loadProject loaded remote because no localSaved", projectId, remoteSaved);
                     return;
                   }
                   if (localSaved && remoteSaved) {
@@ -294,11 +365,13 @@ root.render(<App />);`,
                     const remoteTime = new Date(remoteSaved).getTime();
                     if (remoteTime > localTime) {
                       safeSetLocal(localKey, JSON.stringify(remote));
-                      set({ files: remote.files, autosave: s.autosave, unsaved: {} });
+                      set({ files: remote.files, autosave: s.autosave, unsaved: {}, currentProjectId: projectId });
                       i("loadProject: remote newer, synced remote", projectId);
+                      console.log(tag, "loadProject remote newer, applied remote", projectId);
                       return;
                     } else if (localTime > remoteTime) {
                       d("loadProject: local newer, pushing to remote", projectId);
+                      console.log(tag, "loadProject local newer, pushing to remote", projectId);
                       await pushToServer({ files: s.files, projectId, owner: undefined });
                       return;
                     }
@@ -307,6 +380,7 @@ root.render(<App />);`,
               }
             } catch (err) {
               e("loadProject remote fetch error", String(err));
+              console.log(tag, "loadProject remote fetch error", String(err));
             }
           })();
 
@@ -315,17 +389,20 @@ root.render(<App />);`,
             const autosave = localParsed.autosave ?? s.autosave;
             const unsaved = localParsed.unsaved ?? {};
             i("loadProject ok (local)", projectId);
-            return { files, autosave, unsaved } as any;
+            console.log(tag, "loadProject returning local", projectId, Object.keys(files || {}).length);
+            return { files, autosave, unsaved, currentProjectId: projectId } as any;
           }
 
           return s;
         } catch (err) {
           e("loadProject error", String(err));
+          console.log(tag, "loadProject error", String(err));
           return s;
         }
       }) as any,
     listProjects: () => {
       try {
+        console.log(tag, "listProjects start");
         const res: string[] = [];
         for (let i = 0; i < localStorage.length; i++) {
           const key = localStorage.key(i) as string;
@@ -334,9 +411,11 @@ root.render(<App />);`,
           }
         }
         d("listProjects", res.length);
+        console.log(tag, "listProjects result", res.length);
         return res;
       } catch (err) {
         e("listProjects error", String(err));
+        console.log(tag, "listProjects error", String(err));
         return [];
       }
     },
