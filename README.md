@@ -1,36 +1,82 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# CipherStudio
 
-## Getting Started
+CipherStudio is a local-first, in-browser code playground and lightweight IDE built with Next.js, React, Monaco Editor and Sandpack. It keeps edits first in localStorage (per-file) and optionally pushes full project snapshots to Upstash Redis via a server route protected by Firebase authentication.
 
-First, run the development server:
+Features
+- Monaco-based code editor with tabs
+- Live preview using Sandpack
+- File explorer and toolbar (create, rename, delete, open files)
+- Local-first persistence: per-file keys in localStorage
+- Project snapshots stored in localStorage and optionally pushed to Upstash
+- Firebase GitHub authentication for authenticated pushes
+- Timestamp-based sync between local snapshot and remote Upstash
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+Quick start (Windows PowerShell)
+
+Clone and install
+
+```powershell
+git clone <repo-url>
+cd cipherstudio
+pnpm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Environment
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Create a `.env.local` in the project root and provide the following values (example names used in the codebase):
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- NEXT_PUBLIC_FIREBASE_API_KEY
+- NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+- NEXT_PUBLIC_FIREBASE_PROJECT_ID
+- NEXT_PUBLIC_FIREBASE_APP_ID
+- FIREBASE_ADMIN_SERVICE_ACCOUNT (JSON string or path to service account JSON used by server)
+- UPSTASH_REDIS_REST_URL
+- UPSTASH_REDIS_REST_TOKEN
 
-## Learn More
+Development
 
-To learn more about Next.js, take a look at the following resources:
+```powershell
+pnpm dev
+# open http://localhost:3000
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Build / Production
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```powershell
+pnpm build
+pnpm start
+```
 
-## Deploy on Vercel
+Local storage keys and formats
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- Per-file keys: `cipherstudio:file:{encodeURIComponent(path)}` — value is the raw file content string.
+- Project snapshot: `cipherstudio:project:{projectId}` — value is JSON: `{ files, autosave, unsaved, savedAt }`.
+- Projects index: `cipherstudio:projects` — value is a JSON array of project IDs.
+- Remote canonical key (Upstash): `project:{projectId}` and optionally `user:{owner}:project:{projectId}`. Payload stored server-side is `{ files, savedAt, owner, pushedBy }`.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+How local-first sync works
+
+- Edits always write immediately to per-file localStorage.
+- `autosave` controls whether edits also automatically trigger a push to the server.
+- `saveProject` writes a project snapshot to `cipherstudio:project:{projectId}` and sets `savedAt`.
+- `loadProject` will prefer a local project snapshot; if none exists it reconstructs a project from per-file localStorage entries and persists a snapshot. It will then fetch the remote Upstash snapshot and reconcile by comparing `savedAt` timestamps.
+
+Debugging
+
+Open DevTools console to see `useProjectStore` logs and `LivePreview sandpackFiles` entries. The project includes verbose console logs in the project store for debugging save/load/push operations.
+
+Troubleshooting
+
+- If the live preview shows stale content, check the DevTools console for `LivePreview sandpackFiles` logs. Sandpack is forced to remount when file content changes using a computed key.
+- If pushes fail, ensure your Firebase token is valid and `FIREBASE_ADMIN_SERVICE_ACCOUNT` is available to the server. The server route expects a bearer ID token in `Authorization` header.
+- If Sandpack network calls fail (timeouts to codesandbox telemetry endpoints), the preview may still render but some telemetry/networked features may be limited.
+
+Next improvements
+
+- Canonicalize owner to always use Firebase UID for remote pushes.
+- Add push status toasts and a "last synced" indicator in the UI.
+- Add a server endpoint to list projects for an authenticated user.
+
+Planned storage improvements
+
+- In the future there is a plan to add optional AWS S3 storage for projects. Redis is currently used because pushing on every keystroke to S3 would have increased hosting costs significantly; storing whole-project snapshots in Redis (and only on explicit saves or with autosave enabled) reduces request volume and cost.
