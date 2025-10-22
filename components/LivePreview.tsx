@@ -36,9 +36,11 @@ export default function LivePreview() {
   if (!sandpackFiles["/App.js"]) {
     sandpackFiles["/App.js"] = `export default function App(){ return null }`;
   }
+  const keyParts = Object.entries(sandpackFiles).map(([k, v]) => `${k}:${v?.length ?? 0}`).sort().join("|");
+  console.log("LivePreview sandpackFiles", Object.keys(sandpackFiles), keyParts);
 
   return (
-    <SandpackProvider template="react" files={sandpackFiles}>
+    <SandpackProvider key={keyParts} template="react" files={sandpackFiles}>
       <SandpackLayout>
         <div className="live-preview w-full h-screen flex flex-col">
           <div className="preview-area w-full flex-1 min-h-0">
